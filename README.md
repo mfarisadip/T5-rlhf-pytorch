@@ -8,7 +8,6 @@ Our implementation uses code from the following repositories:
 ## Todo
 - [x] Reward Model - T5 with a scalar head
 
--[]
 ## Citations
 ```bibtex
 @inproceedings{Singhal2022LargeLM,
