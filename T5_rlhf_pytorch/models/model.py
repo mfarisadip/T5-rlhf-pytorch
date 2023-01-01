@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from torch import nn, einsum
 
 from einops import rearrange
+from x_transformers import TransformerWrapper
 
 def exists(val):
     return val is not None
@@ -11,7 +12,6 @@ def default(val, d):
     if exists(val):
         return val
     return d() if isfunction(d) else d
-
 
 # attention
 
@@ -100,3 +100,96 @@ class Attention(nn.Module):
 
         out = rearrange(out, 'b h n d -> b n (h d)')
         return self.to_out(out)
+
+@beartype
+class RewardModel(nn.Module):
+    def __init__(
+        self,
+        transformer_wrapper: TransformerWrapper,
+        dropout = 0.1,
+        num_binned_output = 0.,
+        use_lora = False,
+        lora_r = 8,
+        reward_lora_scope = 'reward',
+    ):
+        super().__init__()
+
+        self.transformer_wrapper = copy.deepcopy(transformer_wrapper)
+        self.transformer_wrapper.set_dropout(dropout)
+
+        self.reward_lora_scope = reward_lora_scope if use_lora else None
+
+        if exists(self.reward_lora_scope):
+            self.transformer_wrapper.add_finetune_params(reward_lora_scope, lora_r = lora_r)
+
+        dim = transformer_wrapper.dim
+
+        self.binned_output = num_binned_output > 1
+
+        self.prompt_embed = nn.Parameter(torch.zeros(1, 1, dim))
+        self.response_embed = nn.Parameter(torch.zeros(1, 1, dim))
+
+        if self.binned_output:
+            self.to_pred = nn.Linear(dim, num_binned_output)
+        else:
+            self.to_pred = nn.Sequential(
+                nn.Linear(dim, 1, bias = False),
+                Rearrange('... 1 -> ...')
+            )
+
+    def load(self, path):
+        path = Path(path)
+        assert path.exists()
+        self.load_state_dict(torch.load(str(path)))
+
+    def finetune_parameters(self):
+        return [
+            *self.to_pred.parameters(),
+            *(self.palm.finetune_parameters(self.reward_lora_scope) if exists(self.reward_lora_scope) else self.palm.parameters())
+        ]
+
+    def forward(
+        self,
+        x,
+        mask = None,
+        prompt_mask = None,
+        labels = None,
+        sample = False,
+        sample_temperature = 1.,
+        disable_lora = False
+    ):
+        # reward model should have an understanding of which section is prompt, and which section is response
+
+        extra_embed = None
+
+        if exists(prompt_mask):
+            extra_embed = torch.where(
+                rearrange(prompt_mask, 'b n -> b n 1'),
+                self.prompt_embed,
+                self.response_embed
+            )
+
+        # get embeddings from transformer_wrapper
+
+        embeds = self.transformer_wrapper(
+            x,
+            extra_embed = extra_embed,
+            return_only_embedding = True,
+            disable_lora = disable_lora,
+            finetune_scope = self.reward_lora_scope
+        )
+
+        pooled = masked_mean(embeds, mask, dim = 1)
+        pred = self.to_pred(pooled)
+
+        if sample and self.binned_output:
+            assert not exists(labels)
+            pred = gumbel_sample(pred, temperature = sample_temperature, dim = -1)
+
+        if not exists(labels):
+            return pred
+
+        if not self.binned_output:
+            return F.mse_loss(pred, labels)
+
+        return F.cross_entropy(pred, labels)
