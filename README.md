@@ -6,8 +6,9 @@ Our implementation uses code from the following repositories:
 - [X Transformers](https://github.com/lucidrains/x-transformers.git) for full-attention transformer
 
 ## Todo
-- [ ] Reward Model - T5 with a scalar head
+- [x] Reward Model - T5 with a scalar head
 
+-[]
 ## Citations
 ```bibtex
 @inproceedings{Singhal2022LargeLM,
