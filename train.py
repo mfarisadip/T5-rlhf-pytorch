@@ -22,7 +22,7 @@ GENERATE_EVERY  = 500
 GENERATE_LENGTH = 1024
 SEQ_LEN = 1024
 
-device = torch.device("mps")
+device = torch.device("cuda")
 
 # helpers
 
