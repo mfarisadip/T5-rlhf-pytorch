@@ -12,7 +12,7 @@ from collections import namedtuple
 from einops import rearrange, repeat, reduce
 from einops.layers.torch import Rearrange
 
-from x_transformers.autoregressive_wrapper import AutoregressiveWrapper
+from T5_rlhf_pytorch.x_transformers.autoregressive_wrapper import AutoregressiveWrapper
 
 # constants
 
